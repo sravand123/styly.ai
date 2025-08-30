@@ -290,126 +290,122 @@ class StyleMeContentScript {
   async createCompositeImage(imageUrls) {
     return new Promise((resolve, reject) => {
       try {
-        // Create a canvas to combine images
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
+            // No padding between images
+            const imagesPerRow = 3;
+            const imageWidth = 240; // Use a fixed width for each image
+            const imageHeight = 240; // Use a fixed height for each image (square for no gaps)
+            const rows = Math.ceil(imageUrls.length / imagesPerRow);
+            const totalWidth = imagesPerRow * imageWidth;
+            const totalHeight = rows * imageHeight;
 
-        // Set canvas size (adjust as needed)
-        const maxWidth = 800;
-        const maxHeight = 600;
-        const padding = 20;
-        const imagesPerRow = 3;
+            // Create canvas
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = totalWidth;
+            canvas.height = totalHeight;
 
-        // Calculate grid dimensions
-        const imageWidth =
-          (maxWidth - padding * (imagesPerRow + 1)) / imagesPerRow;
-        const imageHeight = imageWidth * 0.75; // 4:3 aspect ratio
+            // Fill background (optional, can be transparent if you want)
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, totalWidth, totalHeight);
 
-        // Calculate total canvas size
-        const rows = Math.ceil(imageUrls.length / imagesPerRow);
-        const totalWidth = maxWidth;
-        const totalHeight = rows * imageHeight + padding * (rows + 1);
+            let loadedImages = 0;
+            const totalImages = imageUrls.length;
 
-        canvas.width = totalWidth;
-        canvas.height = totalHeight;
+            imageUrls.forEach((url, index) => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
 
-        // Fill background
-        ctx.fillStyle = '#f8f9fa';
-        ctx.fillRect(0, 0, totalWidth, totalHeight);
+              img.onload = () => {
+                // Calculate position in grid (no padding)
+                const row = Math.floor(index / imagesPerRow);
+                const col = index % imagesPerRow;
+                const x = col * imageWidth;
+                const y = row * imageHeight;
 
-        // Load and draw images
-        let loadedImages = 0;
-        const totalImages = imageUrls.length;
+                // Draw image to fill the cell, cropping if necessary to maintain quality and fill
+                // Calculate aspect ratio and crop to fill the cell
+                const cellAR = imageWidth / imageHeight;
+                const imgAR = img.width / img.height;
+                let sx = 0,
+                  sy = 0,
+                  sw = img.width,
+                  sh = img.height;
 
-        imageUrls.forEach((url, index) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
+                if (imgAR > cellAR) {
+                  // Image is wider than cell, crop sides
+                  sw = img.height * cellAR;
+                  sx = (img.width - sw) / 2;
+                } else if (imgAR < cellAR) {
+                  // Image is taller than cell, crop top/bottom
+                  sh = img.width / cellAR;
+                  sy = (img.height - sh) / 2;
+                }
+                ctx.drawImage(
+                  img,
+                  sx,
+                  sy,
+                  sw,
+                  sh,
+                  x,
+                  y,
+                  imageWidth,
+                  imageHeight
+                );
 
-          img.onload = () => {
-            // Calculate position in grid
-            const row = Math.floor(index / imagesPerRow);
-            const col = index % imagesPerRow;
-            const x = padding + col * (imageWidth + padding);
-            const y = padding + row * (imageHeight + padding);
+                loadedImages++;
+                if (loadedImages === totalImages) {
+                  try {
+                    // Use PNG for lossless quality
+                    const compositeBase64 = canvas.toDataURL('image/png');
+                    resolve(compositeBase64);
+                  } catch (error) {
+                    console.error('Error converting canvas to base64:', error);
+                    reject(error);
+                  }
+                }
+              };
 
-            // Draw image maintaining aspect ratio
-            const aspectRatio = img.width / img.height;
-            let drawWidth = imageWidth;
-            let drawHeight = imageHeight;
+              img.onerror = () => {
+                console.warn(`Failed to load image: ${url}`);
+                loadedImages++;
 
-            if (aspectRatio > 1) {
-              // Landscape image
-              drawHeight = imageWidth / aspectRatio;
-            } else {
-              // Portrait image
-              drawWidth = imageHeight * aspectRatio;
+                // Draw placeholder for failed image
+                const row = Math.floor(index / imagesPerRow);
+                const col = index % imagesPerRow;
+                const x = col * imageWidth;
+                const y = row * imageHeight;
+
+                ctx.fillStyle = '#e9ecef';
+                ctx.fillRect(x, y, imageWidth, imageHeight);
+                ctx.fillStyle = '#6c757d';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(
+                  'Image Failed',
+                  x + imageWidth / 2,
+                  y + imageHeight / 2
+                );
+
+                if (loadedImages === totalImages) {
+                  try {
+                    const compositeBase64 = canvas.toDataURL('image/png');
+                    resolve(compositeBase64);
+                  } catch (error) {
+                    console.error('Error converting canvas to base64:', error);
+                    reject(error);
+                  }
+                }
+              };
+
+              img.src = url;
+            });
+
+            // Handle case where no images load
+            if (totalImages === 0) {
+              resolve(canvas.toDataURL('image/png'));
             }
-
-            // Center image in its grid cell
-            const centerX = x + (imageWidth - drawWidth) / 2;
-            const centerY = y + (imageHeight - drawHeight) / 2;
-
-            ctx.drawImage(img, centerX, centerY, drawWidth, drawHeight);
-
-            // Add border
-            ctx.strokeStyle = '#dee2e6';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x, y, imageWidth, imageHeight);
-
-            loadedImages++;
-
-            // When all images are loaded, convert to base64
-            if (loadedImages === totalImages) {
-              try {
-                const compositeBase64 = canvas.toDataURL('image/jpeg', 0.9);
-                resolve(compositeBase64);
-              } catch (error) {
-                console.error('Error converting canvas to base64:', error);
-                reject(error);
-              }
-            }
-          };
-
-          img.onerror = () => {
-            console.warn(`Failed to load image: ${url}`);
-            loadedImages++;
-
-            // Draw placeholder for failed image
-            const row = Math.floor(index / imagesPerRow);
-            const col = index % imagesPerRow;
-            const x = padding + col * (imageWidth + padding);
-            const y = padding + row * (imageHeight + padding);
-
-            ctx.fillStyle = '#e9ecef';
-            ctx.fillRect(x, y, imageWidth, imageHeight);
-            ctx.fillStyle = '#6c757d';
-            ctx.font = '14px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(
-              'Image Failed',
-              x + imageWidth / 2,
-              y + imageHeight / 2
-            );
-
-            if (loadedImages === totalImages) {
-              try {
-                const compositeBase64 = canvas.toDataURL('image/jpeg', 0.9);
-                resolve(compositeBase64);
-              } catch (error) {
-                console.error('Error converting canvas to base64:', error);
-                reject(error);
-              }
-            }
-          };
-
-          img.src = url;
-        });
-
-        // Handle case where no images load
-        if (totalImages === 0) {
-          resolve(canvas.toDataURL('image/jpeg', 0.9));
-        }
-      } catch (error) {
+          } catch (error) {
         console.error('Error creating composite image:', error);
         reject(error);
       }
@@ -451,6 +447,10 @@ class StyleMeContentScript {
             `Creating composite image for product with ${allImages.length} images`
           );
           imageUrl = await this.createCompositeImage(allImages);
+          console.log(
+            'Composite image created and set as main image:',
+            imageUrl
+          );
           console.log('Composite image created and set as main image');
         } catch (error) {
           console.warn(

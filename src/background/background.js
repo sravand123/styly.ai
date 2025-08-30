@@ -121,28 +121,38 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
     }
 
     // Step 2: Build content parts for outfit generation using the extracted product image
+    // Step 2: Build content parts for outfit generation using the extracted product image
     const contentParts = [
       {
         type: 'text',
-        text: `Base image`,
+        text: `
+Your task is to integrate the provided apparel item onto the base model.
+
+**Apparel Item to Add:** ${product.name}
+
+**Instructions:**
+1.  **Integrate Realistically:** Place the apparel onto the model, ensuring it conforms to the body's shape with natural drapes, folds, and wrinkles.
+2.  **Match the Scene:** The lighting and shadows on the apparel must perfectly match the existing light source in the base image.
+3.  **Preserve Integrity:** Do not change the model's face, pose, body, or the background. The apparel's color, texture, and design must remain identical to the product image provided.
+`,
       },
       {
         type: 'image_url',
         image_url: {
           url: currentBaseImageBase64,
-          detail: `base image`,
+          detail: 'high_res', // Use 'high_res' for better detail analysis
         },
-      },
-      {
-        type: 'text',
-        text: `Apparel to add: ${product.name}`,
+        // Adding an explicit text label for the image
+        text: 'This is the **Base Model Image**.',
       },
       {
         type: 'image_url',
         image_url: {
           url: actualProductImageBase64,
-          detail: `apparel item - ${product.name}`,
+          detail: 'high_res',
         },
+        // Adding an explicit text label for the image
+        text: `This is the **Isolated Apparel Image** to add: ${product.name}.`,
       },
     ];
 
@@ -152,66 +162,51 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
       messages: [
         {
           role: 'system',
-          content: `ROLE
-You are an expert Photorealistic Virtual Try-On Compositor and Digital Apparel Stylist, specializing in creating hyper-realistic fashion imagery for e-commerce and marketing.
+          content: `
+***
 
-OBJECTIVE
+## **ROLE**
+You are an expert **Photorealistic Virtual Try--On Compositor** and **Digital Apparel Stylist**, specializing in creating hyper-realistic fashion imagery for e-commerce and marketing.
+
+## **OBJECTIVE**
 To seamlessly and authentically integrate a provided apparel item onto a base model image, resulting in a high-fidelity, production-ready photograph that is indistinguishable from real photography.
 
-INPUTS
-Base Model Image: A photograph of a human model in a specific pose and environment. This image defines the scene, lighting, and model's physical attributes.
+## **INPUTS**
+* **Base Model Image:** A photograph of a human model in a specific pose and environment. This image defines the scene, lighting, and model's physical attributes.
+* **Isolated Apparel Image:** A transparent PNG of the apparel item, perfectly segmented and presented as if laid flat or on a "ghost" mannequin. This image defines the exact appearance of the garment.
 
-Isolated Apparel Image: A transparent PNG of the apparel item, perfectly segmented and presented as if laid flat or on a "ghost" mannequin. This image defines the exact appearance of the garment.
+## **CORE EXECUTION WORKFLOW**
 
-CORE EXECUTION WORKFLOW
-Garment Morphing & Conformation (CRITICAL REALISM):
+### **Garment Morphing & Conformation (CRITICAL REALISM):**
+* **3D Form Adaptation:** Map the 2D apparel image onto the model's 3D body contours, accounting for the model's curves, muscles, and bone structure. The garment must appear to wrap *around* the body, not just laid *on top* of it.
+* **Dynamic Draping & Folds:** Generate realistic fabric folds, wrinkles, and creases that respond to:
+    * The model's pose and movement (e.g., tension points, arm bends).
+    * The inherent properties of the fabric (e.g., a thick sweater will fold differently than a light t-shirt).
+    * Gravity (e.g., how the fabric hangs naturally).
+* **Fit Accuracy:** The apparel must fit the model in a way that is consistent with its intended sizing and style (e.g., if it's an oversized t-shirt, it should hang loosely; if it's a slim-fit, it should hug the body appropriately). Avoid any unnatural stretching or compression.
 
-3D Form Adaptation: Map the 2D apparel image onto the model's 3D body contours, accounting for the model's curves, muscles, and bone structure. The garment must appear to wrap around the body, not just laid on top of it.
+### **Photometric Integration (Lighting & Shadows):**
+* **Shadow Casting:** Accurately cast shadows from the garment onto the model's body (e.g., collar shadows on the neck, sleeve shadows on the arms) and vice-versa, ensuring consistency with the **Base Model Image's** primary light source(s).
+* **Light Interaction:** The apparel's fabric must reflect and absorb light in a manner consistent with the **Base Model Image's** lighting. Pay attention to specular highlights, diffuse reflections, and ambient occlusion, making the fabric appear to exist within the same light environment.
+* **Subtle Blending:** Ensure the edges of the apparel blend seamlessly with the model's skin, hair, and existing clothing (if any beneath the new garment). Avoid harsh cut-outs or halo effects.
 
-Dynamic Draping & Folds: Generate realistic fabric folds, wrinkles, and creases that respond to:
+### **Apparel Integrity Preservation (Absolute Fidelity):**
+* **NO Modification of Product Appearance:** The color, exact texture, fabric weave, graphic prints, embroidery, and any brand logos or labels *must remain absolutely identical* to the **Isolated Apparel Image**. Do not alter hue, saturation, lightness, or detail unless explicitly required for shadow/light interaction *within the existing material*.
+* **Detail Retention:** Maintain all intricate details of the apparel, such as stitching, buttonholes, zippers, and subtle fabric nuances.
 
-The model's pose and movement (e.g., tension points, arm bends).
+### **Scene Integrity (Unwavering Consistency):**
+* **Base Image as Anchor:** The **Base Model Image** serves as the immutable foundation. Do not alter the model's:
+    * Facial features, expression, hair, or skin tone.
+    * Original posture or limb positioning (the apparel conforms to the model, not the other way around).
+* **Environment & Background:** The original background, environment, and spatial context of the **Base Model Image** must be preserved without any modifications.
+* **Existing Elements:** Maintain all existing elements in the **Base Model Image**, including other clothing layers *if they are meant to be visible around/under the new garment* (e.g., visible cuffs of a shirt under a jacket).
 
-The inherent properties of the fabric (e.g., a thick sweater will fold differently than a light t-shirt).
+## **EXCLUSIONS (Strict Adherence)**
+* **NO Additions:** Do not introduce any new elements, accessories, props, text overlays, graphical elements, or external branding.
+* **NO Stylization:** Do not apply any filters, color grading, artistic effects, or stylistic enhancements that deviate from the native photographic style and realism of the **Base Model Image**. The output should be a direct, photorealistic composite.
+* **NO Distortions:** Avoid any unnatural stretching, warping, or blurring of the apparel or the model.
 
-Gravity (e.g., how the fabric hangs naturally).
-
-Fit Accuracy: The apparel must fit the model in a way that is consistent with its intended sizing and style (e.g., if it's an oversized t-shirt, it should hang loosely; if it's a slim-fit, it should hug the body appropriately). Avoid any unnatural stretching or compression.
-
-Photometric Integration (Lighting & Shadows):
-
-Shadow Casting: Accurately cast shadows from the garment onto the model's body (e.g., collar shadows on the neck, sleeve shadows on the arms) and vice-versa, ensuring consistency with the Base Model Image's primary light source(s).
-
-Light Interaction: The apparel's fabric must reflect and absorb light in a manner consistent with the Base Model Image's lighting. Pay attention to specular highlights, diffuse reflections, and ambient occlusion, making the fabric appear to exist within the same light environment.
-
-Subtle Blending: Ensure the edges of the apparel blend seamlessly with the model's skin, hair, and existing clothing (if any beneath the new garment). Avoid harsh cut-outs or halo effects.
-
-Apparel Integrity Preservation (Absolute Fidelity):
-
-NO Modification of Product Appearance: The color, exact texture, fabric weave, graphic prints, embroidery, and any brand logos or labels must remain absolutely identical to the Isolated Apparel Image. Do not alter hue, saturation, lightness, or detail unless explicitly required for shadow/light interaction within the existing material.
-
-Detail Retention: Maintain all intricate details of the apparel, such as stitching, buttonholes, zippers, and subtle fabric nuances.
-
-Scene Integrity (Unwavering Consistency):
-
-Base Image as Anchor: The Base Model Image serves as the immutable foundation. Do not alter the model's:
-
-Facial features, expression, hair, or skin tone.
-
-Original posture or limb positioning (the apparel conforms to the model, not the other way around).
-
-Environment & Background: The original background, environment, and spatial context of the Base Model Image must be preserved without any modifications.
-
-Existing Elements: Maintain all existing elements in the Base Model Image, including other clothing layers if they are meant to be visible around/under the new garment (e.g., visible cuffs of a shirt under a jacket).
-
-EXCLUSIONS (Strict Adherence)
-NO Additions: Do not introduce any new elements, accessories, props, text overlays, graphical elements, or external branding.
-
-NO Stylization: Do not apply any filters, color grading, artistic effects, or stylistic enhancements that deviate from the native photographic style and realism of the Base Model Image. The output should be a direct, photorealistic composite.
-
-NO Distortions: Avoid any unnatural stretching, warping, or blurring of the apparel or the model.
-
-OUTPUT
+## **OUTPUT**
 A single, high-resolution composite image (e.g., PNG or JPEG, suitable for web/print) that embodies absolute photographic realism, presenting the model wearing the specified apparel as if captured in a single, authentic photograph.`,
         },
         {
@@ -325,58 +320,46 @@ async function extractActualProductImage(apiKey, productImageUrl, productName) {
     messages: [
       {
         role: 'system',
-        content: `INPUT ANALYSIS
-Source: The input is a composite image (collage) containing multiple sub-images.
+        content: `
+***
 
-Content: These sub-images display a single apparel product (a t-shirt) worn by a model from various angles and in different settings.
+## **INPUT ANALYSIS**
 
-Primary Asset: Your first task is to correctly identify this central t-shirt as the target for extraction.
+* **Source:** The input is a composite image (collage) containing multiple sub-images.
+* **Content:** These sub-images display a single apparel product (a t-shirt) worn by a model from various angles and in different settings.
+* **Primary Asset:** Your first task is to correctly identify this central t-shirt as the target for extraction.
 
-CORE EXECUTION WORKFLOW
-View Identification & Selection:
+## **CORE EXECUTION WORKFLOW**
 
-Scan all sub-images within the collage.
+### **View Identification & Selection**
 
-Identify the clearest, most complete, and front-facing view of the t-shirt. This will be the source for your "Front View" asset.
+* Scan all sub-images within the collage.
+* Identify the **clearest, most complete, and front-facing view** of the t-shirt. This will be the source for your "Front View" asset.
+* Identify the **clearest and most complete view of the back** of the t-shirt, ensuring the "RAMEN" graphic is fully visible. This will be the source for your "Back View" asset.
 
-Identify the clearest and most complete view of the back of the t-shirt, ensuring the "RAMEN" graphic is fully visible. This will be the source for your "Back View" asset.
+### **Synthesis and Extraction**
 
-Synthesis and Extraction:
+* **For the Front View:**
+    * Meticulously segment the selected front view of the t-shirt from the model and its background.
+    * Create a precise, clean-edged alpha mask around the t-shirt's entire silhouette (body, sleeves, collar).
+    * The resulting image should appear as if the t-shirt is laid perfectly flat or on an invisible "ghost" mannequin.
+* **For the Back View:**
+    * Repeat the segmentation process for the selected back view. Pay special attention to preserving the integrity and detail of the large graphic print.
 
-For the Front View:
+### **Integrity Preservation (CRITICAL)**
 
-Meticulously segment the selected front view of the t-shirt from the model and its background.
+* The visual characteristics of the t-shirt fabric **must not be altered**.
+* Preserve the original color (teal/dark blue), texture, fabric drape, and internal shadows.
+* Ensure all graphics (the small chest logo on the front, the large graphic on the back) are retained with perfect fidelity.
 
-Create a precise, clean-edged alpha mask around the t-shirt's entire silhouette (body, sleeves, collar).
+## **FINAL OUTPUT SPECIFICATIONS**
 
-The resulting image should appear as if the t-shirt is laid perfectly flat or on an invisible "ghost" mannequin.
-
-For the Back View:
-
-Repeat the segmentation process for the selected back view. Pay special attention to preserving the integrity and detail of the large graphic print.
-
-Integrity Preservation (CRITICAL):
-
-The visual characteristics of the t-shirt fabric must not be altered.
-
-Preserve the original color (teal/dark blue), texture, fabric drape, and internal shadows.
-
-Ensure all graphics (the small chest logo on the front, the large graphic on the back) are retained with perfect fidelity.
-
-FINAL OUTPUT SPECIFICATIONS
-Deliverables: You will generate one single image of the product.
-
-A standalone image of the product's front perspective.
-
-
-Format: The image must be a high-resolution PNG file.
-
-Background: The background for image must be 100% transparent (full alpha channel).
-
-Canvas & Cropping: Auto-crop the canvas of each final image to the bounding box of the t-shirt, leaving only minimal transparent padding.
-
-Exclusions: The final assets must be completely free of any original background, models, people, props, or text that is not part of the product's design.
-
+* **Deliverables:** You will generate **one single image** of the product.
+    * A standalone image of the product's **front perspective**.
+* **Format:** The image must be a high-resolution **PNG file**.
+* **Background:** The background for the image must be **100% transparent** (full alpha channel).
+* **Canvas & Cropping:** Auto-crop the canvas of the final image to the bounding box of the t-shirt, leaving only minimal transparent padding.
+* **Exclusions:** The final asset must be completely free of any original background, models, people, props, or text that is not part of the product's design.
 `,
       },
       {
@@ -384,13 +367,23 @@ Exclusions: The final assets must be completely free of any original background,
         content: [
           {
             type: 'text',
-            text: `Product: ${productName}`,
+            text: `
+Your task is to extract the specified product from the provided image.
+
+**Product to Extract:** ${productName}
+
+**Instructions:**
+1.  **Select View:** Analyze the image and identify the clearest, most complete, **front-facing view** of the product.
+2.  **Isolate:** Meticulously segment this single view of the product from the model, background, and any other elements.
+3.  **Output:** Generate one single image of the isolated product on a **100% transparent background**. The final image must be a clean PNG, tightly cropped around the product.
+`,
           },
           {
             type: 'image_url',
             image_url: {
               url: productImageBase64,
-              detail: `product image to extract`,
+              // Use 'high_res' for better detail during segmentation
+              detail: 'high_res',
             },
           },
         ],
