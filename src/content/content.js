@@ -11,6 +11,7 @@ class StyleMeContentScript {
     this.savedProducts = [];
     this.currentSite = this.detectSite();
     this.processedRequests = new Set(); // Track processed requests to prevent infinite loops
+    this.tempUserImage = null; // Initialize tempUserImage
     this.buttonStyle = `
       position: absolute;
       top: 8px;
@@ -974,6 +975,18 @@ class StyleMeContentScript {
     const fileInput = this.sidebar.querySelector('#user-image-input');
     fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
 
+    // Save settings button
+    const saveSettingsBtn = this.sidebar.querySelector('#save-settings');
+    if (saveSettingsBtn) {
+      console.log('Save settings button found, adding event listener');
+      saveSettingsBtn.addEventListener('click', () => {
+        console.log('Save settings button clicked');
+        this.saveSettings();
+      });
+    } else {
+      console.error('Save settings button not found!');
+    }
+
     // Select all products button
     const selectAllBtn = this.sidebar.querySelector('#select-all-products');
     selectAllBtn.addEventListener('click', () => this.selectAllProducts());
@@ -1050,7 +1063,20 @@ class StyleMeContentScript {
    */
   async saveSettings() {
     try {
-      const apiKey = this.sidebar.querySelector('#api-key-input').value.trim();
+      console.log('saveSettings method called');
+
+      const apiKeyInput = this.sidebar.querySelector('#api-key-input');
+      if (!apiKeyInput) {
+        console.error('API key input not found!');
+        alert('Error: API key input not found');
+        return;
+      }
+
+      const apiKey = apiKeyInput.value.trim();
+      console.log(
+        'Saving settings: API Key:',
+        apiKey ? '***' + apiKey.slice(-4) : 'empty'
+      );
 
       if (!apiKey) {
         alert('Please enter your OpenRouter API key');
@@ -1058,15 +1084,28 @@ class StyleMeContentScript {
       }
 
       const saveData = { openRouterApiKey: apiKey };
+      console.log('Save data prepared:', {
+        ...saveData,
+        openRouterApiKey: '***' + apiKey.slice(-4),
+      });
 
       if (this.tempUserImage) {
         saveData.userImage = this.tempUserImage;
+        console.log('Saving user image from temp storage.');
+      } else {
+        console.log('No temp user image found.');
       }
 
+      console.log('About to save to chrome.storage.local...');
       await chrome.storage.local.set(saveData);
+      console.log('Settings saved successfully to chrome.storage.local');
 
       this.showSuccessToast('Settings saved successfully!');
+
+      // Clear temp image after successful save
+      this.tempUserImage = null;
     } catch (error) {
+      console.error('Error in saveSettings:', error);
       alert('Error saving settings: ' + error.message);
     }
   }
