@@ -289,7 +289,7 @@ async function extractActualProductImage(apiKey, productImageUrl, productName) {
 
   // Build request to extract the actual product image
   const request = {
-    model: 'mistralai/mistral-small-3.2-24b-instruct:free',
+    model: 'google/gemini-2.5-flash-image-preview:free',
     messages: [
       {
         role: 'system',
@@ -390,7 +390,9 @@ To meticulously isolate the primary apparel item from a source image, removing a
 
         // If it's a base64 image, return it directly
         if (imageUrl.startsWith('data:')) {
-          console.log(`Using base64 extracted image for ${productName}`);
+          console.log(
+            `Using base64 extracted image for extracted product ${productName}`
+          );
           return imageUrl;
         } else if (imageUrl.startsWith('http')) {
           // Convert HTTP URL to base64
