@@ -6,6 +6,164 @@
 // Utility functions (included directly since ES6 imports aren't supported in service workers)
 
 /**
+ * Generates a hash for a URL to use as a cache key
+ * @param {string} url - The URL to hash
+ * @returns {string} - A simple hash string
+ */
+function generateUrlHash(url) {
+  let hash = 0;
+  for (let i = 0; i < url.length; i++) {
+    const char = url.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Retrieves cached product image if available
+ * @param {string} productImageUrl - The URL of the product image
+ * @returns {Promise<string|null>} - Cached base64 image or null if not found
+ */
+async function getCachedProductImage(productImageUrl) {
+  try {
+    const urlHash = generateUrlHash(productImageUrl);
+    const cacheKey = `productImage_${urlHash}`;
+
+    const result = await chrome.storage.local.get([cacheKey]);
+    if (result[cacheKey] && result[cacheKey].image) {
+      // Validate that the cached data has the expected structure
+      if (
+        typeof result[cacheKey].image === 'string' &&
+        result[cacheKey].image.startsWith('data:')
+      ) {
+        console.log(`Found valid cached product image for: ${productImageUrl}`);
+        return result[cacheKey];
+      } else {
+        console.warn(
+          `Cached data corrupted for: ${productImageUrl}, removing from cache`
+        );
+        await chrome.storage.local.remove([cacheKey]);
+        return null;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error retrieving cached product image:', error);
+    return null;
+  }
+}
+
+/**
+ * Stores product image in cache for future reuse
+ * @param {string} productImageUrl - The URL of the product image
+ * @param {string} base64Image - The base64 encoded image to cache
+ */
+async function cacheProductImage(productImageUrl, base64Image) {
+  try {
+    const urlHash = generateUrlHash(productImageUrl);
+    const cacheKey = `productImage_${urlHash}`;
+
+    // Store the image with timestamp for potential future cleanup
+    const cacheData = {
+      image: base64Image,
+      timestamp: Date.now(),
+      url: productImageUrl,
+    };
+
+    await chrome.storage.local.set({ [cacheKey]: cacheData });
+    console.log(`Cached product image for: ${productImageUrl}`);
+  } catch (error) {
+    console.error('Error caching product image:', error);
+  }
+}
+
+/**
+ * Cleans up old cached images to prevent storage bloat
+ * @param {number} maxAge - Maximum age in milliseconds (default: 24 hours)
+ */
+async function cleanupOldCachedImages(maxAge = 24 * 60 * 60 * 1000) {
+  try {
+    const result = await chrome.storage.local.get(null);
+    const now = Date.now();
+    const keysToRemove = [];
+
+    for (const [key, value] of Object.entries(result)) {
+      if (key.startsWith('productImage_') && value.timestamp) {
+        if (now - value.timestamp > maxAge) {
+          keysToRemove.push(key);
+        }
+      }
+    }
+
+    if (keysToRemove.length > 0) {
+      await chrome.storage.local.remove(keysToRemove);
+      console.log(`Cleaned up ${keysToRemove.length} old cached images`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up cached images:', error);
+  }
+}
+
+/**
+ * Get information about the current cache status
+ */
+async function getCacheInfo() {
+  try {
+    const result = await chrome.storage.local.get(null);
+    const cacheKeys = Object.keys(result).filter((key) =>
+      key.startsWith('productImage_')
+    );
+
+    let totalSize = 0;
+    let validImages = 0;
+    const cacheDetails = [];
+
+    for (const key of cacheKeys) {
+      const item = result[key];
+      if (
+        item &&
+        item.image &&
+        typeof item.image === 'string' &&
+        item.image.startsWith('data:')
+      ) {
+        // Estimate size: base64 string length * 0.75 (approximate compression ratio)
+        const estimatedSize = Math.round(item.image.length * 0.75);
+        totalSize += estimatedSize;
+        validImages++;
+
+        cacheDetails.push({
+          url: item.url,
+          timestamp: item.timestamp,
+          age: Date.now() - item.timestamp,
+          ageHours:
+            Math.round(
+              ((Date.now() - item.timestamp) / (1000 * 60 * 60)) * 100
+            ) / 100,
+          size: estimatedSize,
+          sizeKB: Math.round((estimatedSize / 1024) * 100) / 100,
+        });
+      }
+    }
+
+    return {
+      totalCachedImages: cacheKeys.length,
+      validCachedImages: validImages,
+      totalSizeBytes: totalSize,
+      totalSizeMB: Math.round((totalSize / (1024 * 1024)) * 100) / 100,
+      averageImageSizeKB:
+        validImages > 0
+          ? Math.round((totalSize / validImages / 1024) * 100) / 100
+          : 0,
+      cacheDetails: cacheDetails.sort((a, b) => b.timestamp - a.timestamp), // Sort by newest first
+    };
+  } catch (error) {
+    console.error('Error getting cache info:', error);
+    throw error;
+  }
+}
+
+/**
  * Converts an image URL to base64 data URL for API submission
  * @param {string} imageUrl - The URL of the image to convert
  * @returns {Promise<string>} - Base64 data URL
@@ -101,16 +259,25 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
     // Step 1: Extract actual product image from the product image URL
     console.log(`Extracting actual product image for ${product.name}...`);
     let actualProductImageBase64;
+    let wasCached = false;
 
     try {
-      actualProductImageBase64 = await extractActualProductImage(
-        apiKey,
-        product.image,
-        product.name
-      );
-      console.log(
-        `Successfully extracted actual product image for ${product.name}`
-      );
+      // Check if image is already cached
+      const cachedImage = await getCachedProductImage(product.image);
+      if (cachedImage && cachedImage.image) {
+        console.log(`Using cached product image for ${product.name}`);
+        actualProductImageBase64 = cachedImage.image;
+        wasCached = true;
+      } else {
+        actualProductImageBase64 = await extractActualProductImage(
+          apiKey,
+          product.image,
+          product.name
+        );
+        console.log(
+          `Successfully extracted actual product image for ${product.name} (API call)`
+        );
+      }
     } catch (extractError) {
       console.warn(
         `Failed to extract actual product image for ${product.name}, using original:`,
@@ -297,6 +464,13 @@ A single, high-resolution composite image (e.g., PNG or JPEG, suitable for web/p
 
   // Return the final generated image
   console.log('\n--- Final outfit generation complete ---');
+
+  // Log cache usage summary
+  const cacheInfo = await getCacheInfo();
+  console.log(
+    `Cache status: ${cacheInfo.totalCachedImages} images cached, ${cacheInfo.totalSizeMB}MB total`
+  );
+
   return currentBaseImageBase64;
 }
 
@@ -311,8 +485,18 @@ A single, high-resolution composite image (e.g., PNG or JPEG, suitable for web/p
 async function extractActualProductImage(apiKey, productImageUrl, productName) {
   console.log(`Extracting actual product image from: ${productImageUrl}`);
 
+  // Check for cached image first
+  const cachedImage = await getCachedProductImage(productImageUrl);
+  if (cachedImage && cachedImage.image) {
+    console.log(`Using cached product image for: ${productImageUrl}`);
+    return cachedImage.image;
+  }
+
   // Convert the product image URL to base64
   const productImageBase64 = await convertUrlToBase64(productImageUrl);
+
+  // Cache the newly fetched image
+  await cacheProductImage(productImageUrl, productImageBase64);
 
   // Build request to extract the actual product image
   const request = {
@@ -446,10 +630,15 @@ Your task is to extract the specified product from the provided image.
           console.log(
             `Using base64 extracted image for extracted product ${productName}`
           );
+          // Cache the extracted image for future reuse
+          await cacheProductImage(productImageUrl, imageUrl);
           return imageUrl;
         } else if (imageUrl.startsWith('http')) {
           // Convert HTTP URL to base64
-          return await convertUrlToBase64(imageUrl);
+          const base64Image = await convertUrlToBase64(imageUrl);
+          // Cache the extracted image for future reuse
+          await cacheProductImage(productImageUrl, base64Image);
+          return base64Image;
         }
       }
     }
@@ -461,7 +650,10 @@ Your task is to extract the specified product from the provided image.
     if (urls && urls.length > 0) {
       const imageUrl = urls[0];
       console.log(`Found extracted image URL for ${productName}:`, imageUrl);
-      return await convertUrlToBase64(imageUrl);
+      const base64Image = await convertUrlToBase64(imageUrl);
+      // Cache the extracted image for future reuse
+      await cacheProductImage(productImageUrl, base64Image);
+      return base64Image;
     } else {
       console.log(`No extracted image found for ${productName}`);
       throw new Error(`Failed to extract product image for ${productName}`);
@@ -483,6 +675,7 @@ class StyleMeBackgroundService {
   init() {
     this.setupMessageListener();
     this.setupExtensionClickHandler();
+    this.setupCacheCleanup();
     console.log('Style Me Background Service initialized');
   }
 
@@ -499,8 +692,152 @@ class StyleMeBackgroundService {
         }
         // Return true to indicate we'll send a response asynchronously
         return true;
+      } else if (message.type === 'CLEAR_PRODUCT_CACHE') {
+        // Handle cache clearing request
+        this.clearProductImageCache()
+          .then(() => {
+            sendResponse({
+              success: true,
+              message: 'Product image cache cleared successfully',
+            });
+          })
+          .catch((error) => {
+            sendResponse({ success: false, error: error.message });
+          });
+        return true;
+      } else if (message.type === 'GET_CACHE_INFO') {
+        // Handle cache info request
+        this.getCacheInfoInternal()
+          .then((info) => {
+            sendResponse({ success: true, info });
+          })
+          .catch((error) => {
+            sendResponse({ success: false, error: error.message });
+          });
+        return true;
+      } else if (message.type === 'CHECK_IMAGE_CACHED') {
+        // Handle check if specific image is cached
+        const { imageUrl } = message;
+        getCachedProductImage(imageUrl)
+          .then((cachedImage) => {
+            sendResponse({
+              success: true,
+              isCached: !!cachedImage,
+              hasImage: !!(cachedImage && cachedImage.image),
+            });
+          })
+          .catch((error) => {
+            sendResponse({ success: false, error: error.message });
+          });
+        return true;
+      } else if (message.type === 'PRELOAD_PRODUCT_IMAGES') {
+        // Handle preload request
+        const { imageUrls } = message;
+        this.preloadProductImages(imageUrls)
+          .then((results) => {
+            sendResponse({ success: true, results });
+          })
+          .catch((error) => {
+            sendResponse({ success: false, error: error.message });
+          });
+        return true;
       }
     });
+  }
+
+  /**
+   * Setup periodic cache cleanup to prevent storage bloat
+   */
+  setupCacheCleanup() {
+    // Clean up old cached images every 6 hours
+    setInterval(() => {
+      cleanupOldCachedImages();
+    }, 6 * 60 * 60 * 1000);
+
+    // Initial cleanup on startup
+    cleanupOldCachedImages();
+  }
+
+  /**
+   * Manually clear all cached product images
+   */
+  async clearProductImageCache() {
+    try {
+      const result = await chrome.storage.local.get(null);
+      const keysToRemove = [];
+
+      for (const key of Object.keys(result)) {
+        if (key.startsWith('productImage_')) {
+          keysToRemove.push(key);
+        }
+      }
+
+      if (keysToRemove.length > 0) {
+        await chrome.storage.local.remove(keysToRemove);
+        console.log(`Cleared ${keysToRemove.length} cached product images`);
+      }
+    } catch (error) {
+      console.error('Error clearing product image cache:', error);
+    }
+  }
+
+  /**
+   * Preload and cache product images for better performance
+   * @param {Array<string>} imageUrls - Array of product image URLs to preload
+   */
+  async preloadProductImages(imageUrls) {
+    try {
+      console.log(`Preloading ${imageUrls.length} product images...`);
+      const results = [];
+
+      for (const imageUrl of imageUrls) {
+        try {
+          // Check if already cached
+          const cached = await getCachedProductImage(imageUrl);
+          if (cached && cached.image) {
+            console.log(`Image already cached: ${imageUrl}`);
+            results.push({
+              url: imageUrl,
+              status: 'already_cached',
+            });
+            continue;
+          }
+
+          // Convert to base64 and cache
+          const base64Image = await convertUrlToBase64(imageUrl);
+          await cacheProductImage(imageUrl, base64Image);
+          results.push({
+            url: imageUrl,
+            status: 'cached',
+          });
+          console.log(`Preloaded and cached: ${imageUrl}`);
+        } catch (error) {
+          console.error(`Failed to preload image: ${imageUrl}`, error);
+          results.push({
+            url: imageUrl,
+            status: 'failed',
+            error: error.message,
+          });
+        }
+      }
+
+      console.log(
+        `Preloading complete: ${
+          results.filter((r) => r.status === 'cached').length
+        } new images cached`
+      );
+      return results;
+    } catch (error) {
+      console.error('Error preloading product images:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get information about the current cache status
+   */
+  async getCacheInfoInternal() {
+    return await getCacheInfo();
   }
 
   /**
