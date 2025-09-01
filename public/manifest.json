@@ -3,7 +3,13 @@
   "name": "Styly.ai",
   "version": "1.0",
   "description": "Virtually try on clothes using your own OpenRouter API key.",
-  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
   "host_permissions": ["*://*.myntra.com/*"],
   "action": {
     "default_title": "Style Me"

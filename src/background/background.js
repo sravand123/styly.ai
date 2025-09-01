@@ -230,8 +230,7 @@ async function convertUrlToBase64(imageUrl) {
 
 /**
  * Generates a single outfit image from multiple apparel items using OpenRouter/Gemini
- * Builds up the outfit progressively by adding one product at a time
- * First extracts actual product images from URLs, then generates the outfit
+ * Creates a composite image of all products and sends it to the API in one call
  * @param {string} apiKey - User's OpenRouter API key
  * @param {string} inputImageUrl - Base mannequin or input image URL
  * @param {Array<{name: string, image: string}>} products - List of apparel items with image URLs
@@ -241,13 +240,13 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
   if (!apiKey) throw new Error('API key is required');
 
   console.log(
-    `Starting progressive outfit generation with ${products.length} products...`
+    `Starting single composite outfit generation with ${products.length} products...`
   );
 
-  // Start with the base image
-  let currentBaseImageBase64 = await convertUrlToBase64(inputImageUrl);
+  // Step 1: Extract and prepare all product images
+  const productImages = [];
+  const productNames = [];
 
-  // Process each product one by one, building up the outfit
   for (let i = 0; i < products.length; i++) {
     const product = products[i];
     console.log(
@@ -256,10 +255,9 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
       } ---`
     );
 
-    // Step 1: Extract actual product image from the product image URL
+    // Extract actual product image from the product image URL
     console.log(`Extracting actual product image for ${product.name}...`);
     let actualProductImageBase64;
-    let wasCached = false;
 
     try {
       // Check if image is already cached
@@ -267,7 +265,6 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
       if (cachedImage && cachedImage.image) {
         console.log(`Using cached product image for ${product.name}`);
         actualProductImageBase64 = cachedImage.image;
-        wasCached = true;
       } else {
         actualProductImageBase64 = await extractActualProductImage(
           apiKey,
@@ -287,191 +284,178 @@ async function generateOutfitImage(apiKey, inputImageUrl, products) {
       actualProductImageBase64 = await convertUrlToBase64(product.image);
     }
 
-    // Step 2: Build content parts for outfit generation using the extracted product image
-    // Step 2: Build content parts for outfit generation using the extracted product image
-    const contentParts = [
-      {
-        type: 'text',
-        text: `
-Your task is to integrate the provided apparel item onto the base model.
+    productImages.push(actualProductImageBase64);
+    productNames.push(product.name);
+  }
 
-**Apparel Item to Add:** ${product.name}
+  // Step 2: Prepare product images for API (no composite needed in service worker)
+  console.log('Preparing product images for API...');
+
+  // Step 3: Build content parts for single API call
+  const contentParts = [
+    {
+      type: 'text',
+      text: `
+Your task is to create a complete outfit by integrating ALL the provided apparel items onto the base model simultaneously.
+
+**Apparel Items to Integrate:**
+${productNames.map((name, index) => `${index + 1}. ${name}`).join('\n')}
 
 **Instructions:**
-1.  **Integrate Realistically:** Place the apparel onto the model, ensuring it conforms to the body's shape with natural drapes, folds, and wrinkles.
-2.  **Match the Scene:** The lighting and shadows on the apparel must perfectly match the existing light source in the base image.
-3.  **Preserve Integrity:** Do not change the model's face, pose, body, or the background. The apparel's color, texture, and design must remain identical to the product image provided.
+1. **Integrate All Items Realistically:** Place ALL apparel items onto the model at once, ensuring they work together as a cohesive outfit.
+2. **Layering & Coordination:** Consider how the items should be layered (e.g., shirt under jacket, pants with shirt tucked in).
+3. **Match the Scene:** The lighting and shadows on ALL apparel must perfectly match the existing light source in the base image.
+4. **Preserve Integrity:** Do not change the model's face, pose, body, or the background. All apparel colors, textures, and designs must remain identical to the product images provided.
+5. **Outfit Harmony:** Ensure all items work together visually and functionally as a complete, stylish outfit.
 `,
+    },
+    {
+      type: 'image_url',
+      image_url: {
+        url: await convertUrlToBase64(inputImageUrl),
+        detail: 'high_res',
       },
-      {
-        type: 'image_url',
-        image_url: {
-          url: currentBaseImageBase64,
-          detail: 'high_res', // Use 'high_res' for better detail analysis
-        },
-        // Adding an explicit text label for the image
-        text: 'This is the **Base Model Image**.',
-      },
-      {
-        type: 'image_url',
-        image_url: {
-          url: actualProductImageBase64,
-          detail: 'high_res',
-        },
-        // Adding an explicit text label for the image
-        text: `This is the **Isolated Apparel Image** to add: ${product.name}.`,
-      },
-    ];
+      text: 'This is the **Base Model Image** - the foundation for the outfit.',
+    },
+  ];
 
-    // Build request for this iteration
-    const request = {
-      model: 'google/gemini-2.5-flash-image-preview:free',
-      messages: [
-        {
-          role: 'system',
-          content: `
+  // Add each product image separately to the content
+  productImages.forEach((productImage, index) => {
+    contentParts.push({
+      type: 'image_url',
+      image_url: {
+        url: productImage,
+        detail: 'high_res',
+      },
+      text: `This is **Apparel Item ${index + 1}**: ${productNames[index]}.`,
+    });
+  });
+
+  // Step 4: Build request for single API call
+  const request = {
+    model: 'google/gemini-2.5-flash-image-preview:free',
+    messages: [
+      {
+        role: 'system',
+        content: `
 ***
 
 ## **ROLE**
-You are an expert **Photorealistic Virtual Try--On Compositor** and **Digital Apparel Stylist**, specializing in creating hyper-realistic fashion imagery for e-commerce and marketing.
+You are an expert **Photorealistic Virtual Try-On Compositor** and **Digital Apparel Stylist**, specializing in creating hyper-realistic fashion imagery for e-commerce and marketing.
 
 ## **OBJECTIVE**
-To seamlessly and authentically integrate a provided apparel item onto a base model image, resulting in a high-fidelity, production-ready photograph that is indistinguishable from real photography.
+To seamlessly and authentically integrate MULTIPLE apparel items onto a base model image simultaneously, resulting in a high-fidelity, production-ready photograph of a complete outfit that is indistinguishable from real photography.
 
 ## **INPUTS**
 * **Base Model Image:** A photograph of a human model in a specific pose and environment. This image defines the scene, lighting, and model's physical attributes.
-* **Isolated Apparel Image:** A transparent PNG of the apparel item, perfectly segmented and presented as if laid flat or on a "ghost" mannequin. This image defines the exact appearance of the garment.
+* **Individual Apparel Images:** Multiple separate images, each containing one apparel item to be integrated, perfectly segmented and presented as if laid flat or on a "ghost" mannequin. Each image defines the exact appearance of its respective garment.
 
 ## **CORE EXECUTION WORKFLOW**
 
-### **Garment Morphing & Conformation (CRITICAL REALISM):**
-* **3D Form Adaptation:** Map the 2D apparel image onto the model's 3D body contours, accounting for the model's curves, muscles, and bone structure. The garment must appear to wrap *around* the body, not just laid *on top* of it.
-* **Dynamic Draping & Folds:** Generate realistic fabric folds, wrinkles, and creases that respond to:
-    * The model's pose and movement (e.g., tension points, arm bends).
-    * The inherent properties of the fabric (e.g., a thick sweater will fold differently than a light t-shirt).
-    * Gravity (e.g., how the fabric hangs naturally).
-* **Fit Accuracy:** The apparel must fit the model in a way that is consistent with its intended sizing and style (e.g., if it's an oversized t-shirt, it should hang loosely; if it's a slim-fit, it should hug the body appropriately). Avoid any unnatural stretching or compression.
+### **Multi-Item Integration (CRITICAL REALISM):**
+* **Simultaneous Integration:** Integrate ALL apparel items at once, not one by one, ensuring they work together as a cohesive outfit.
+* **Layering Logic:** Apply proper layering principles (e.g., undershirt beneath overshirt, shirt tucked into pants, jacket over shirt).
+* **3D Form Adaptation:** Map ALL 2D apparel images onto the model's 3D body contours, accounting for the model's curves, muscles, and bone structure.
+* **Dynamic Draping & Folds:** Generate realistic fabric folds, wrinkles, and creases for ALL items that respond to:
+    * The model's pose and movement
+    * The inherent properties of each fabric type
+    * Gravity and natural hanging
+    * How items interact with each other (e.g., shirt fabric under jacket)
 
 ### **Photometric Integration (Lighting & Shadows):**
-* **Shadow Casting:** Accurately cast shadows from the garment onto the model's body (e.g., collar shadows on the neck, sleeve shadows on the arms) and vice-versa, ensuring consistency with the **Base Model Image's** primary light source(s).
-* **Light Interaction:** The apparel's fabric must reflect and absorb light in a manner consistent with the **Base Model Image's** lighting. Pay attention to specular highlights, diffuse reflections, and ambient occlusion, making the fabric appear to exist within the same light environment.
-* **Subtle Blending:** Ensure the edges of the apparel blend seamlessly with the model's skin, hair, and existing clothing (if any beneath the new garment). Avoid harsh cut-outs or halo effects.
+* **Unified Shadow System:** Cast shadows from ALL garments onto the model's body and vice-versa, ensuring consistency with the base image's light source(s).
+* **Light Interaction:** ALL apparel fabrics must reflect and absorb light consistently within the same light environment.
+* **Inter-Item Shadows:** Generate realistic shadows between overlapping garments (e.g., jacket casting shadows on shirt underneath).
 
 ### **Apparel Integrity Preservation (Absolute Fidelity):**
-* **NO Modification of Product Appearance:** The color, exact texture, fabric weave, graphic prints, embroidery, and any brand logos or labels *must remain absolutely identical* to the **Isolated Apparel Image**. Do not alter hue, saturation, lightness, or detail unless explicitly required for shadow/light interaction *within the existing material*.
-* **Detail Retention:** Maintain all intricate details of the apparel, such as stitching, buttonholes, zippers, and subtle fabric nuances.
+* **NO Modification of Product Appearance:** The color, exact texture, fabric weave, graphic prints, embroidery, and any brand logos or labels for ALL items *must remain absolutely identical* to the provided product images.
+* **Detail Retention:** Maintain all intricate details of ALL apparel items.
 
 ### **Scene Integrity (Unwavering Consistency):**
-* **Base Image as Anchor:** The **Base Model Image** serves as the immutable foundation. Do not alter the model's:
-    * Facial features, expression, hair, or skin tone.
-    * Original posture or limb positioning (the apparel conforms to the model, not the other way around).
-* **Environment & Background:** The original background, environment, and spatial context of the **Base Model Image** must be preserved without any modifications.
-* **Existing Elements:** Maintain all existing elements in the **Base Model Image**, including other clothing layers *if they are meant to be visible around/under the new garment* (e.g., visible cuffs of a shirt under a jacket).
+* **Base Image as Anchor:** The base model image serves as the immutable foundation. Do not alter the model's facial features, expression, hair, skin tone, or original posture.
+* **Environment & Background:** The original background and environment must be preserved without any modifications.
 
 ## **EXCLUSIONS (Strict Adherence)**
-* **NO Additions:** Do not introduce any new elements, accessories, props, text overlays, graphical elements, or external branding.
-* **NO Stylization:** Do not apply any filters, color grading, artistic effects, or stylistic enhancements that deviate from the native photographic style and realism of the **Base Model Image**. The output should be a direct, photorealistic composite.
+* **NO Additions:** Do not introduce any new elements, accessories, props, text overlays, or external branding.
+* **NO Stylization:** Do not apply any filters, color grading, or artistic effects that deviate from the native photographic style.
 * **NO Distortions:** Avoid any unnatural stretching, warping, or blurring of the apparel or the model.
 
 ## **OUTPUT**
-A single, high-resolution composite image (e.g., PNG or JPEG, suitable for web/print) that embodies absolute photographic realism, presenting the model wearing the specified apparel as if captured in a single, authentic photograph.`,
-        },
-        {
-          role: 'user',
-          content: contentParts,
-        },
-      ],
-      temperature: 0.2,
-    };
-
-    console.log(`Calling API for ${product.name}...`);
-
-    // Call OpenRouter API for this product
-    const response = await fetch(
-      'https://openrouter.ai/api/v1/chat/completions',
+A single, high-resolution composite image presenting the model wearing ALL the specified apparel items as a complete, cohesive outfit, captured as if in a single, authentic photograph.`,
+      },
       {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-      }
-    );
+        role: 'user',
+        content: contentParts,
+      },
+    ],
+    temperature: 0.2,
+  };
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(
-        `OpenRouter API Error for ${product.name}: ${response.status} ${errText}`
-      );
+  console.log('Calling API with composite image for all products...');
+
+  // Step 5: Call OpenRouter API once with all products
+  const response = await fetch(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
     }
-
-    const data = await response.json();
-    console.log(`API response received for ${product.name}`);
-
-    // Parse response content to get the new base image
-    try {
-      const contentStr = data.choices[0].message.content;
-      console.log(`Raw API response for ${product.name}:`, contentStr);
-
-      // Check if there are generated images in the response
-      if (
-        data.choices[0].message.images &&
-        data.choices[0].message.images.length > 0
-      ) {
-        const generatedImage = data.choices[0].message.images[0];
-        console.log(
-          `Found generated image for ${product.name}:`,
-          generatedImage
-        );
-
-        if (generatedImage.image_url && generatedImage.image_url.url) {
-          const imageUrl = generatedImage.image_url.url;
-
-          // If it's a base64 image, use it directly as the new base
-          if (imageUrl.startsWith('data:')) {
-            console.log(`Using base64 image as new base for ${product.name}`);
-            currentBaseImageBase64 = imageUrl;
-            continue; // Move to next product
-          } else if (imageUrl.startsWith('http')) {
-            currentBaseImageBase64 = await convertUrlToBase64(imageUrl);
-            continue; // Move to next product
-          }
-        }
-      }
-
-      // If no images found, check text content for URLs
-      const urlRegex = /https?:\/\/[^\s]+/g;
-      const urls = contentStr.match(urlRegex);
-
-      if (urls && urls.length > 0) {
-        const imageUrl = urls[0];
-        console.log(
-          `Found image URL in text response for ${product.name}:`,
-          imageUrl
-        );
-        currentBaseImageBase64 = await convertUrlToBase64(imageUrl);
-        continue; // Move to next product
-      } else {
-        console.log(`No image found in response for ${product.name}`);
-        throw new Error(`Failed to generate image for ${product.name}`);
-      }
-    } catch (err) {
-      console.error(`Error parsing response for ${product.name}:`, err);
-      throw err;
-    }
-  }
-
-  // Return the final generated image
-  console.log('\n--- Final outfit generation complete ---');
-
-  // Log cache usage summary
-  const cacheInfo = await getCacheInfo();
-  console.log(
-    `Cache status: ${cacheInfo.totalCachedImages} images cached, ${cacheInfo.totalSizeMB}MB total`
   );
 
-  return currentBaseImageBase64;
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`OpenRouter API Error: ${response.status} ${errText}`);
+  }
+
+  const data = await response.json();
+  console.log('API response received for composite outfit generation');
+
+  // Step 6: Parse response to get the generated outfit image
+  try {
+    const contentStr = data.choices[0].message.content;
+    console.log('Raw API response:', contentStr);
+
+    // Check if there are generated images in the response
+    if (
+      data.choices[0].message.images &&
+      data.choices[0].message.images.length > 0
+    ) {
+      const generatedImage = data.choices[0].message.images[0];
+      console.log('Found generated outfit image:', generatedImage);
+
+      if (generatedImage.image_url && generatedImage.image_url.url) {
+        const imageUrl = generatedImage.image_url.url;
+
+        // If it's a base64 image, return it directly
+        if (imageUrl.startsWith('data:')) {
+          console.log('Using base64 generated outfit image');
+          return imageUrl;
+        } else if (imageUrl.startsWith('http')) {
+          return await convertUrlToBase64(imageUrl);
+        }
+      }
+    }
+
+    // If no images found, check text content for URLs
+    const urlRegex = /https?:\/\/[^\s]+/g;
+    const urls = contentStr.match(urlRegex);
+
+    if (urls && urls.length > 0) {
+      const imageUrl = urls[0];
+      console.log('Found outfit image URL in text response:', imageUrl);
+      return await convertUrlToBase64(imageUrl);
+    } else {
+      console.log('No outfit image found in response');
+      throw new Error('Failed to generate outfit image');
+    }
+  } catch (err) {
+    console.error('Error parsing outfit generation response:', err);
+    throw err;
+  }
 }
 
 /**

@@ -940,7 +940,18 @@ class StyleMeContentScript {
               </button>
             </div>
           </div>
-          <div id="saved-products-list"></div>         
+          <div id="saved-products-list"></div>
+          
+          <!-- Try On Selected Products Button -->
+          <div id="try-on-selected-section" style="margin-top: 20px; display: none;">
+            <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+              <h4 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 600;">🎭 Try On Selected Products</h4>
+              <p style="margin: 0 0 15px 0; font-size: 13px; opacity: 0.8;">Generate outfit with all selected products</p>
+              <button id="try-on-selected-btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s ease;">
+                ✨ Try On Selected Products
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Generated Results Section -->
@@ -994,6 +1005,12 @@ class StyleMeContentScript {
     // Deselect all products button
     const deselectAllBtn = this.sidebar.querySelector('#deselect-all-products');
     deselectAllBtn.addEventListener('click', () => this.deselectAllProducts());
+
+    // Try on selected products button
+    const tryOnSelectedBtn = this.sidebar.querySelector('#try-on-selected-btn');
+    if (tryOnSelectedBtn) {
+      tryOnSelectedBtn.addEventListener('click', () => this.handleTryOnSelectedProducts());
+    }
 
     // Click outside to close
     document.addEventListener('click', (e) => {
@@ -1367,21 +1384,39 @@ class StyleMeContentScript {
    * Update combined generation section visibility
    */
   updateCombinedGenerationVisibility() {
-    if (!this.sidebar) return;
+                                         if (!this.sidebar) return;
 
-    const selectedProducts = this.getSelectedProducts();
-    const combinedSection = this.sidebar.querySelector(
-      '#combined-generation-section'
-    );
+                                         const selectedProducts = this.getSelectedProducts();
 
-    if (combinedSection) {
-      if (selectedProducts.length > 0) {
-        combinedSection.style.display = 'block';
-      } else {
-        combinedSection.style.display = 'none';
-      }
-    }
-  }
+                                         // Update combined generation section
+                                         const combinedSection = this.sidebar.querySelector(
+                                           '#combined-generation-section'
+                                         );
+
+                                         if (combinedSection) {
+                                           if (selectedProducts.length > 0) {
+                                             combinedSection.style.display =
+                                               'block';
+                                           } else {
+                                             combinedSection.style.display =
+                                               'none';
+                                           }
+                                         }
+
+                                         // Update try-on selected products section
+                                         const tryOnSelectedSection = this.sidebar.querySelector(
+                                           '#try-on-selected-section'
+                                         );
+                                         if (tryOnSelectedSection) {
+                                           if (selectedProducts.length > 0) {
+                                             tryOnSelectedSection.style.display =
+                                               'block';
+                                           } else {
+                                             tryOnSelectedSection.style.display =
+                                               'none';
+                                           }
+                                         }
+                                       }
 
   /**
    * Converts an image URL to base64 data URL for API submission
@@ -1445,26 +1480,71 @@ class StyleMeContentScript {
     const generatedResult = this.sidebar.querySelector('#generated-result');
 
     if (resultsSection && generatedResult) {
-      resultsSection.style.display = 'block';
+                                             resultsSection.style.display =
+                                               'block';
 
-      const productNames = selectedProducts.map((p) => p.name).join(', ');
+                                             const productNames = selectedProducts
+                                               .map((p) => p.name)
+                                               .join(', ');
 
-      generatedResult.innerHTML = `
+                                             generatedResult.innerHTML = `
         <div style="text-align: center;">
           <h4 style="margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">🎭 Combined Look Generated!</h4>
           <p style="margin: 0 0 15px 0; font-size: 13px; opacity: 0.8;">Products: ${productNames}</p>
           <img src="${generatedImage}" style="width: 100%; max-width: 300px; border-radius: 8px; margin-bottom: 15px;">
           <div style="display: flex; gap: 10px; justify-content: center;">
-            <button onclick="window.open('${generatedImage}', '_blank')" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">
+            <button id="view-full-size-btn" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">
               🔍 View Full Size
             </button>
-            <button onclick="navigator.clipboard.writeText('${generatedImage}')" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">
+            <button id="copy-url-btn" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">
               📋 Copy URL
             </button>
           </div>
         </div>
       `;
-    }
+
+                                             // Add event listeners for the buttons
+                                             const viewFullSizeBtn = generatedResult.querySelector(
+                                               '#view-full-size-btn'
+                                             );
+                                             const copyUrlBtn = generatedResult.querySelector(
+                                               '#copy-url-btn'
+                                             );
+
+                                             if (viewFullSizeBtn) {
+                                               viewFullSizeBtn.addEventListener(
+                                                 'click',
+                                                 () =>
+                                                   this.viewFullSizeImage(
+                                                     generatedImage
+                                                   )
+                                               );
+                                             }
+
+                                             if (copyUrlBtn) {
+                                               copyUrlBtn.addEventListener(
+                                                 'click',
+                                                 async () => {
+                                                   try {
+                                                     await navigator.clipboard.writeText(
+                                                       generatedImage
+                                                     );
+                                                     this.showSuccessToast(
+                                                       'Image URL copied to clipboard!'
+                                                     );
+                                                   } catch (error) {
+                                                     console.error(
+                                                       'Failed to copy URL:',
+                                                       error
+                                                     );
+                                                     this.showSuccessToast(
+                                                       'Failed to copy URL to clipboard'
+                                                     );
+                                                   }
+                                                 }
+                                               );
+                                             }
+                                           }
 
     // Scroll to results
     resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -1681,6 +1761,51 @@ class StyleMeContentScript {
   }
 
   /**
+   * Handle try-on for multiple selected products
+   */
+  async handleTryOnSelectedProducts() {
+    try {
+      const selectedProducts = this.getSelectedProducts();
+      
+      if (selectedProducts.length === 0) {
+        this.showSuccessToast('Please select at least one product to try on');
+        return;
+      }
+
+      console.log('Starting try-on for selected products:', selectedProducts);
+
+      // Show loading state
+      this.showLoadingToast('Generating outfit with selected products...');
+
+      // Send to background script for processing
+      const response = await this.sendMessageWithTimeout(
+        {
+          type: 'STYLE_ME_CLICKED',
+          data: { 
+            products: selectedProducts, 
+            userImage: await this.getUserImage()
+          },
+          source: 'content_script',
+        },
+        30000 // 30 second timeout for multiple products
+      );
+
+      if (response && response.success) {
+        console.log('Background script accepted multiple products request');
+        this.hideLoadingToast();
+        this.showSuccessToast('Try-on request sent! Check the results section.');
+      } else {
+        throw new Error('Background script rejected request');
+      }
+
+    } catch (error) {
+      console.error('Error in handleTryOnSelectedProducts:', error);
+      this.hideLoadingToast();
+      this.showSuccessToast('Failed to process selected products. Please try again.');
+    }
+  }
+
+  /**
    * Check if a product is already saved
    */
   isProductAlreadySaved(productInfo) {
@@ -1719,31 +1844,41 @@ class StyleMeContentScript {
    * Show generated result in sidebar
    */
   showGeneratedResult(generatedImage, productInfo = null) {
-    if (!this.sidebar) return;
+                                                            if (!this.sidebar)
+                                                              return;
 
-    const resultsSection = this.sidebar.querySelector('#results-section');
-    const resultContainer = this.sidebar.querySelector('#generated-result');
+                                                            const resultsSection = this.sidebar.querySelector(
+                                                              '#results-section'
+                                                            );
+                                                            const resultContainer = this.sidebar.querySelector(
+                                                              '#generated-result'
+                                                            );
 
-    let saveButton = '';
-    if (productInfo && !this.isProductAlreadySaved(productInfo)) {
-      saveButton = `
-        <button onclick="styleMeContent.saveCurrentProduct()" 
+                                                            let saveButton = '';
+                                                            if (
+                                                              productInfo &&
+                                                              !this.isProductAlreadySaved(
+                                                                productInfo
+                                                              )
+                                                            ) {
+                                                              saveButton = `
+        <button id="save-product-btn" 
                 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-right: 10px;">
           💾 Save Product
         </button>
       `;
-    }
+                                                            }
 
-    resultContainer.innerHTML = `
+                                                            resultContainer.innerHTML = `
       <div style="text-align: center;">
         <img src="${generatedImage}" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
         <div style="margin-top: 10px;">
           ${saveButton}
-          <button onclick="styleMeContent.downloadImage('${generatedImage}')" 
+          <button id="view-full-image-btn" 
                   style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-right: 10px;">
-            💾 Download
+            🔍 View Full Image
           </button>
-          <button onclick="styleMeContent.shareImage('${generatedImage}')" 
+          <button id="share-btn" 
                   style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
             📤 Share
           </button>
@@ -1751,21 +1886,146 @@ class StyleMeContentScript {
       </div>
     `;
 
-    // Store the current product info for the save button
-    this.currentProductInfo = productInfo;
+                                                            // Add event listeners for the buttons
+                                                            const viewFullImageBtn = resultContainer.querySelector(
+                                                              '#view-full-image-btn'
+                                                            );
+                                                            const shareBtn = resultContainer.querySelector(
+                                                              '#share-btn'
+                                                            );
+                                                            const saveProductBtn = resultContainer.querySelector(
+                                                              '#save-product-btn'
+                                                            );
 
-    resultsSection.style.display = 'block';
-    resultsSection.scrollIntoView({ behavior: 'smooth' });
-  }
+                                                            if (
+                                                              viewFullImageBtn
+                                                            ) {
+                                                              viewFullImageBtn.addEventListener(
+                                                                'click',
+                                                                () =>
+                                                                  this.viewFullSizeImage(
+                                                                    generatedImage
+                                                                  )
+                                                              );
+                                                            }
+
+                                                            if (shareBtn) {
+                                                              shareBtn.addEventListener(
+                                                                'click',
+                                                                () =>
+                                                                  this.shareImage(
+                                                                    generatedImage
+                                                                  )
+                                                              );
+                                                            }
+
+                                                            if (
+                                                              saveProductBtn
+                                                            ) {
+                                                              saveProductBtn.addEventListener(
+                                                                'click',
+                                                                () =>
+                                                                  this.saveCurrentProduct()
+                                                              );
+                                                            }
+
+                                                            // Store the current product info for the save button
+                                                            this.currentProductInfo = productInfo;
+
+                                                            resultsSection.style.display =
+                                                              'block';
+                                                            resultsSection.scrollIntoView(
+                                                              {
+                                                                behavior:
+                                                                  'smooth',
+                                                              }
+                                                            );
+                                                          }
 
   /**
    * Download generated image
    */
   downloadImage(imageDataUrl) {
-    const link = document.createElement('a');
-    link.download = `style-me-result-${Date.now()}.png`;
-    link.href = imageDataUrl;
-    link.click();
+    try {
+      // Validate input
+      if (!imageDataUrl || typeof imageDataUrl !== 'string') {
+        throw new Error('Invalid image data provided');
+      }
+
+      // Handle different image formats
+      let filename = `style-me-result-${Date.now()}`;
+      let mimeType = 'image/png';
+
+      // Determine file type from data URL
+      if (imageDataUrl.startsWith('data:image/jpeg')) {
+        filename += '.jpg';
+        mimeType = 'image/jpeg';
+      } else if (imageDataUrl.startsWith('data:image/png')) {
+        filename += '.png';
+        mimeType = 'image/png';
+      } else if (imageDataUrl.startsWith('data:image/webp')) {
+        filename += '.webp';
+        mimeType = 'image/webp';
+      } else if (imageDataUrl.startsWith('data:image/gif')) {
+        filename += '.gif';
+        mimeType = 'image/gif';
+      } else {
+        filename += '.png'; // Default to PNG
+      }
+
+      // Create blob from data URL
+      const byteString = atob(imageDataUrl.split(',')[1]);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+
+      const blob = new Blob([ab], { type: mimeType });
+
+      // Create download link
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.style.display = 'none';
+
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Clean up
+      URL.revokeObjectURL(link.href);
+
+      this.showSuccessToast('Image downloaded successfully!');
+      console.log(`Image downloaded: ${filename}`);
+    } catch (error) {
+      console.error('Error downloading image:', error);
+
+      // Try alternative download method
+      try {
+        console.log('Trying alternative download method...');
+        const link = document.createElement('a');
+        link.href = imageDataUrl;
+        link.download = `style-me-result-${Date.now()}.png`;
+        link.style.display = 'none';
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        this.showSuccessToast('Image downloaded using alternative method!');
+      } catch (fallbackError) {
+        console.error(
+          'Alternative download method also failed:',
+          fallbackError
+        );
+        this.showSuccessToast(
+          'Failed to download image. Please try right-clicking and "Save As".'
+        );
+      }
+    }
   }
 
   /**
@@ -1785,9 +2045,11 @@ class StyleMeContentScript {
           text: 'Check out my virtual try-on result from Style Me!',
         });
       } catch (error) {
+        console.log('Native sharing failed, using fallback:', error);
         this.fallbackShare(imageDataUrl);
       }
     } else {
+      console.log('Native sharing not supported, using fallback');
       this.fallbackShare(imageDataUrl);
     }
   }
@@ -1796,17 +2058,45 @@ class StyleMeContentScript {
    * Fallback share method
    */
   fallbackShare(imageDataUrl) {
-    navigator.clipboard
-      .writeText(imageDataUrl)
-      .then(() => {
-        this.showSuccessToast('Image data copied to clipboard!');
-      })
-      .catch(() => {
-        alert(
-          'Sharing not supported. You can right-click the image to save it.'
-        );
-      });
-  }
+                                // Try to copy the image data URL to clipboard
+                                navigator.clipboard
+                                  .writeText(imageDataUrl)
+                                  .then(() => {
+                                    this.showSuccessToast(
+                                      'Image data copied to clipboard! You can paste it in any chat or email.'
+                                    );
+                                  })
+                                  .catch((error) => {
+                                    console.error(
+                                      'Clipboard write failed:',
+                                      error
+                                    );
+
+                                    // Alternative fallback: create a temporary download link
+                                    try {
+                                      const link = document.createElement('a');
+                                      link.href = imageDataUrl;
+                                      link.download = `style-me-share-${Date.now()}.png`;
+                                      link.style.display = 'none';
+
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      document.body.removeChild(link);
+
+                                      this.showSuccessToast(
+                                        'Image downloaded for sharing!'
+                                      );
+                                    } catch (downloadError) {
+                                                              console.error(
+                                                                'Download fallback also failed:',
+                                                                downloadError
+                                                              );
+                                                              alert(
+                                                                'Sharing not supported. You can right-click the image to save it manually.'
+                                                              );
+                                                            }
+                                  });
+                              }
 
   /**
    * Show loading toast
@@ -1858,6 +2148,142 @@ class StyleMeContentScript {
   hideLoadingToast() {
     const toast = document.querySelector('#style-me-loading-toast');
     if (toast) toast.remove();
+  }
+
+  /**
+   * View full size image in a modal overlay
+   */
+  viewFullSizeImage(imageDataUrl) {
+    try {
+      // Remove any existing modal
+      const existingModal = document.querySelector('#style-me-image-modal');
+      if (existingModal) {
+        existingModal.remove();
+      }
+
+      // Create modal overlay
+      const modal = document.createElement('div');
+      modal.id = 'style-me-image-modal';
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 10002;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+      `;
+
+      // Create image container
+      const imageContainer = document.createElement('div');
+      imageContainer.style.cssText = `
+        position: relative;
+        max-width: 90vw;
+        max-height: 90vh;
+        text-align: center;
+      `;
+
+      // Create image element
+      const img = document.createElement('img');
+      img.src = imageDataUrl;
+      img.style.cssText = `
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      `;
+
+      // Create close button
+      const closeBtn = document.createElement('button');
+      closeBtn.innerHTML = '×';
+      closeBtn.style.cssText = `
+        position: absolute;
+        top: -40px;
+        right: 0;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 20px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+
+      // Create download button
+      const downloadBtn = document.createElement('button');
+      downloadBtn.innerHTML = '💾';
+      downloadBtn.style.cssText = `
+        position: absolute;
+        top: -40px;
+        left: 0;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+
+      // Add event listeners
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modal.remove();
+      });
+
+      downloadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.downloadImage(imageDataUrl);
+      });
+
+      modal.addEventListener('click', () => {
+        modal.remove();
+      });
+
+      // Prevent image clicks from closing modal
+      img.addEventListener('click', (e) => e.stopPropagation());
+
+      // Assemble modal
+      imageContainer.appendChild(img);
+      imageContainer.appendChild(closeBtn);
+      imageContainer.appendChild(downloadBtn);
+      modal.appendChild(imageContainer);
+
+      // Add to page
+      document.body.appendChild(modal);
+
+      // Add escape key listener
+      const escapeHandler = (e) => {
+        if (e.key === 'Escape') {
+          modal.remove();
+          document.removeEventListener('keydown', escapeHandler);
+        }
+      };
+      document.addEventListener('keydown', escapeHandler);
+
+      // Clean up event listener when modal is removed
+      modal.addEventListener('remove', () => {
+        document.removeEventListener('keydown', escapeHandler);
+      });
+
+    } catch (error) {
+      console.error('Error showing full size image:', error);
+      this.showSuccessToast('Failed to show full size image');
+    }
   }
 
   /**
