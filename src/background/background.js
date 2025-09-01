@@ -479,9 +479,6 @@ async function extractActualProductImage(apiKey, productImageUrl, productName) {
   // Convert the product image URL to base64
   const productImageBase64 = await convertUrlToBase64(productImageUrl);
 
-  // Cache the newly fetched image
-  await cacheProductImage(productImageUrl, productImageBase64);
-
   // Build request to extract the actual product image
   const request = {
     model: 'google/gemini-2.5-flash-image-preview:free',
